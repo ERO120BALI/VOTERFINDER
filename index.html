@@ -1,159 +1,72 @@
-<!DOCTYPE html>
-<html lang="hi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bali 120 - Space Finder</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
-    <style>
-        /* Aakasiya Animation CSS */
-        body { 
-            margin: 0; padding: 20px; 
-            font-family: 'Segoe UI', sans-serif; 
-            display: flex; justify-content: center; 
-            min-height: 100vh;
-            background: #020617; /* Deep Space Black */
-            color: white;
-            overflow-x: hidden;
-            position: relative;
-        }
-
-        /* Moving Stars Layer */
-        .stars {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(1px 1px at 20px 30px, #fff, rgba(0,0,0,0)),
-                        radial-gradient(1px 1px at 40px 70px, #fff, rgba(0,0,0,0)),
-                        radial-gradient(2px 2px at 50px 160px, #ddd, rgba(0,0,0,0));
-            background-size: 200px 200px;
-            animation: moveStars 150s linear infinite;
-            z-index: -2;
-        }
-
-        /* Meteor/Ulka Pind Effect */
-        .meteor {
-            position: fixed; width: 2px; height: 150px;
-            background: linear-gradient(to bottom, rgba(255,255,255,0), #fff);
-            opacity: 0; top: -10%; left: 50%;
-            transform: rotate(35deg);
-            animation: shoot 8s linear infinite;
-            z-index: -1;
-        }
-
-        @keyframes moveStars { from { transform: translateY(0); } to { transform: translateY(-1000px); } }
-        @keyframes shoot {
-            0% { transform: translate(-500px, 0) rotate(35deg); opacity: 1; }
-            20% { transform: translate(500px, 800px) rotate(35deg); opacity: 0; }
-            100% { opacity: 0; }
-        }
-
-        /* Main Container */
-        .app-card { 
-            background: rgba(255, 255, 255, 0.95); 
-            width: 100%; max-width: 420px; 
-            padding: 30px; border-radius: 30px; 
-            box-shadow: 0 25px 50px rgba(0,0,0,0.8); 
-            position: relative; color: #1e293b;
-            margin-top: 20px; height: fit-content;
-        }
-
-        h2 { text-align: center; color: #1e3c72; margin-top: 0; font-weight: 800; font-size: 24px; }
-        label { font-size: 13px; font-weight: bold; color: #64748b; margin-top: 15px; display: block; }
-        
-        input { 
-            width: 100%; padding: 15px; margin: 8px 0; 
-            border: 2px solid #e2e8f0; border-radius: 15px; 
-            box-sizing: border-box; font-size: 16px; transition: 0.3s;
-        }
-        input:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 15px rgba(59, 130, 246, 0.3); }
-
-        /* Result Cards */
-        .result-card { 
-            background: white; border-radius: 20px; 
-            padding: 18px; margin-top: 15px; 
-            border-left: 10px solid #22c55e; 
-            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
-            animation: slideUp 0.5s ease-out;
-        }
-
-        @keyframes slideUp { from { transform: translateY(50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        .v-tag { font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; }
-        .badges { display: flex; gap: 8px; margin: 10px 0; }
-        .badge { padding: 5px 12px; border-radius: 8px; color: white; font-weight: bold; font-size: 13px; }
-        .p-badge { background: #ef4444; }
-        .s-badge { background: #3b82f6; }
-        .address { font-size: 18px; font-weight: bold; color: #0f172a; display: block; }
-    </style>
-</head>
-<body>
-
-    <div class="stars"></div>
-    <div class="meteor"></div>
-
-    <div class="app-card">
-        <h2>BALI 120 FINDER</h2>
-        
-        <label>📍 Step 1: Village Search</label>
-        <input type="text" id="vSearch" list="vList" placeholder="🔍 Type Village Name...">
-        <datalist id="vList"></datalist>
-
-        <label>🏠 Step 2: Basti / Section Search</label>
-        <input type="text" id="aSearch" placeholder="🏠 Type Basti, Phali or Gali...">
-
-        <div id="results"></div>
-    </div>
-
 <script>
     let allData = [];
     const vInp = document.getElementById('vSearch');
     const aInp = document.getElementById('aSearch');
     const vList = document.getElementById('vList');
     const resDiv = document.getElementById('results');
+    let searchTimeout;
 
-    // Kal computer par CSV load karne ke liye
+    // Fast CSV Loading
     Papa.parse("data.csv", {
         download: true,
         header: true,
         skipEmptyLines: true,
+        worker: true, // Background mein load karega taaki site hang na ho
         complete: function(results) {
-            allData = results.data;
-            const uniqueVillages = [...new Set(allData.map(item => item.VILLAGE || item.Village_Name))].filter(v => v).sort();
+            allData = results.data.map(d => ({
+                village: (d.VILLAGE || d.Village_Name || "").trim(),
+                address: (d.SECTION_ADDRESS || d.Section_Address || "").trim(),
+                part: d.PART_NO || d.Part_Number,
+                sec: d.SECTION_NO || d.Section_Number
+            }));
+
+            // Duplicate hatane ke liye advanced Set
+            const uniqueVillages = [...new Set(allData.map(item => item.village))].filter(v => v).sort();
             uniqueVillages.forEach(v => {
                 let opt = document.createElement('option');
                 opt.value = v;
                 vList.appendChild(opt);
             });
+            console.log("Data loaded successfully!");
         }
     });
 
-    function search() {
-        const v = vInp.value.toLowerCase().trim();
-        const a = aInp.value.toLowerCase().trim();
-        resDiv.innerHTML = "";
-        if(!v) return;
-
-        const filtered = allData.filter(d => {
-            const rowV = (d.VILLAGE || d.Village_Name || "").toLowerCase();
-            const rowA = (d.SECTION_ADDRESS || d.Section_Address || "").toLowerCase();
-            return rowV.includes(v) && rowA.includes(a);
-        });
-
-        filtered.forEach(d => {
-            resDiv.innerHTML += `
-                <div class="result-card">
-                    <div class="v-tag">${d.VILLAGE || d.Village_Name}</div>
-                    <div class="badges">
-                        <span class="badge p-badge">PART: ${d.PART_NO || d.Part_Number}</span>
-                        <span class="badge s-badge">SEC: ${d.SECTION_NO || d.Section_Number}</span>
-                    </div>
-                    <span class="address">📍 ${d.SECTION_ADDRESS || d.Section_Address}</span>
-                </div>`;
-        });
+    // Debounce Function: Taaki typing smooth ho
+    function debounceSearch() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(performSearch, 300); // 0.3 second ka wait
     }
 
-    vInp.addEventListener('input', search);
-    aInp.addEventListener('input', search);
-</script>
+    function performSearch() {
+        const v = vInp.value.toLowerCase().trim();
+        const a = aInp.value.toLowerCase().trim();
+        
+        if(!v) {
+            resDiv.innerHTML = "";
+            return;
+        }
 
-</body>
-</html>
+        // Fast filtering
+        const filtered = allData.filter(d => 
+            d.village.toLowerCase() === v && 
+            d.address.toLowerCase().includes(a)
+        );
+
+        // Result dikhane ka optimized tarika
+        const htmlResults = filtered.map(d => `
+            <div class="result-card">
+                <div class="v-tag">${d.village}</div>
+                <div class="badges">
+                    <span class="badge p-badge">PART: ${d.part}</span>
+                    <span class="badge s-badge">SEC: ${d.sec}</span>
+                </div>
+                <span class="address">📍 ${d.address}</span>
+            </div>
+        `).join('');
+
+        resDiv.innerHTML = htmlResults || "<p style='color:white; text-align:center;'>Match nahi mila ❌</p>";
+    }
+
+    vInp.addEventListener('input', debounceSearch);
+    aInp.addEventListener('input', debounceSearch);
+</script>
